@@ -2221,7 +2221,7 @@ has_load_impl (tree clsmeth)
    all @implemented {class,category} meta-data.  */
 
 static void
-build_v2_address_table (vec<tree, va_gc> *src, const char *nam, tree attr)
+build_v2_address_table (vec<tree, va_gc> *src, const char *nam, tree attr, const char *section)
 {
   int count=0;
   tree type, decl, expr;
@@ -2250,6 +2250,8 @@ build_v2_address_table (vec<tree, va_gc> *src, const char *nam, tree attr)
   expr = objc_build_constructor (type, initlist);
   OBJCMETA (decl, objc_meta, attr);
   finish_var_decl (decl, expr);
+
+  set_decl_section_name (decl, section);
 }
 
 /* Build decl = initializer; for each protocol referenced in
@@ -3612,13 +3614,13 @@ objc_generate_v2_next_metadata (void)
   build_v2_protocol_list_address_table ();
 
   build_v2_address_table (class_list, "_OBJC_ClassList$",
-			  meta_label_classlist);
+			  meta_label_classlist, "objc_classlist");
   build_v2_address_table (category_list, "_OBJC_CategoryList$",
-			  meta_label_categorylist);
+			  meta_label_categorylist, "objc_catlist");
   build_v2_address_table (nonlazy_class_list, "_OBJC_NonLazyClassList$",
-			  meta_label_nonlazy_classlist);
+			  meta_label_nonlazy_classlist, "objc_nlclslist");
   build_v2_address_table (nonlazy_category_list, "_OBJC_NonLazyCategoryList$",
-			  meta_label_nonlazy_categorylist);
+			  meta_label_nonlazy_categorylist, "objc_nlcatlist");
 
   /* Generate catch objects for eh, if any are needed.  */
   build_v2_eh_catch_objects ();
