@@ -30,7 +30,11 @@ proc objc-set-runtime-options { dowhat args } {
     # that Darwin uses.  If NeXT is ported to another target, then it should
     # be listed here.
     if [istarget *-*-darwin*] {
-      lappend rtlist "-fnext-runtime" 
+      if { [istarget *64-*-*] || [istarget arm-*-*] } {
+	lappend rtlist "-fnext-runtime -fobjc-abi-version=2 -fobjc-nilcheck"
+      } else {
+	lappend rtlist "-fnext-runtime -fobjc-abi-version=1"
+      }
     }
     if [info exists OBJC_RUNTIME_OPTIONS] {
       foreach other $OBJC_RUNTIME_OPTIONS {

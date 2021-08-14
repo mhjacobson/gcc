@@ -1676,11 +1676,7 @@ build_v2_objc_method_fixup_call (int super_flag, tree method_prototype,
       if (TREE_CODE (ret_type) == RECORD_TYPE
 	  || TREE_CODE (ret_type) == UNION_TYPE)
 	{
-	  vec<constructor_elt, va_gc> *rtt = NULL;
-	  /* ??? CHECKME. hmmm..... think we need something more
-	     here.  */
-	  CONSTRUCTOR_APPEND_ELT (rtt, NULL_TREE, NULL_TREE);
-	  ftree = objc_build_constructor (ret_type, rtt);
+	  ftree = objc_build_constructor (ret_type, NULL);
 	}
       else
 	ftree = fold_convert (ret_type, integer_zero_node);
@@ -1790,11 +1786,7 @@ build_v2_build_objc_method_call (int super, tree method_prototype,
       if (TREE_CODE (ret_type) == RECORD_TYPE
 	  || TREE_CODE (ret_type) == UNION_TYPE)
 	{
-	  vec<constructor_elt, va_gc> *rtt = NULL;
-	  /* ??? CHECKME. hmmm..... think we need something more
-	     here.  */
-	  CONSTRUCTOR_APPEND_ELT (rtt, NULL_TREE, NULL_TREE);
-	  ftree = objc_build_constructor (ret_type, rtt);
+	  ftree = objc_build_constructor (ret_type, NULL);
 	}
       else
 	ftree = fold_convert (ret_type, integer_zero_node);
