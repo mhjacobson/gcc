@@ -632,9 +632,7 @@ struct class_ro_t
     uint32_t const flags;
     uint32_t const instanceStart;
     uint32_t const instanceSize;
-#ifdef __LP64__
-    uint32_t const reserved;
-#endif
+    // [32 bits of reserved space here on LP64 platforms]
     const uint8_t * const ivarLayout;
     const char *const name;
     const struct method_list_t * const baseMethods;
@@ -676,11 +674,6 @@ build_v2_class_templates (void)
 
   /* uint32_t const instanceSize; */
   add_field_decl (integer_type_node, "instanceSize", &chain);
-
-  /* This ABI is currently only used on m64 NeXT.  We always
-     explicitly declare the alignment padding.  */
-  /* uint32_t const reserved; */
-  add_field_decl (integer_type_node, "reserved", &chain);
 
   /* const uint8_t * const ivarLayout; */
   cnst_strg_type = build_pointer_type (unsigned_char_type_node);
@@ -3230,12 +3223,6 @@ build_v2_class_ro_t_initializer (tree type, tree name,
   /* instanceSize */
   CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE,
 			  build_int_cst (integer_type_node, instanceSize));
-
-  /* This ABI is currently only used on m64 NeXT.  We always
-     explicitly declare the alignment padding.  */
-  /* reserved, pads alignment.  */
-  CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE,
-			    build_int_cst (integer_type_node, 0));
 
   /* ivarLayout */
   unsigned_char_star = build_pointer_type (unsigned_char_type_node);
