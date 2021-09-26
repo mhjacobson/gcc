@@ -92,6 +92,7 @@ enum objc_v2_tree_index
   OCTI_V2_CAT_TEMPL,
   OCTI_V2_CLS_RO_TEMPL,
   OCTI_V2_PROTO_TEMPL,
+  OCTI_V2_PROTO_LIST_TEMPL,
   OCTI_V2_IVAR_TEMPL,
   OCTI_V2_IVAR_LIST_TEMPL,
   OCTI_V2_MESSAGE_REF_TEMPL,
@@ -130,6 +131,8 @@ enum objc_v2_tree_index
 				objc_v2_global_trees[OCTI_V2_CAT_TEMPL]
 #define objc_v2_protocol_template \
 				objc_v2_global_trees[OCTI_V2_PROTO_TEMPL]
+#define objc_v2_protocol_list_template \
+				objc_v2_global_trees[OCTI_V2_PROTO_LIST_TEMPL]
 
 /* struct message_ref_t */
 #define objc_v2_message_ref_template \
@@ -196,7 +199,7 @@ static void build_v2_message_ref_templates (void);
 static void build_v2_class_templates (void);
 static void build_v2_super_template (void);
 static void build_v2_category_template (void);
-static void build_v2_protocol_template (void);
+static void build_v2_protocol_templates (void);
 
 static tree next_runtime_abi_02_super_superclassfield_id (void);
 
@@ -394,9 +397,9 @@ static void next_runtime_02_initialize (void)
 		build_pointer_type (xref_tag (RECORD_TYPE,
 				    get_identifier ("_prop_list_t")));
 
+  build_v2_protocol_templates ();
   build_v2_class_templates ();
   build_v2_super_template ();
-  build_v2_protocol_template ();
   build_v2_category_template ();
 
   bool fixup_p = flag_next_runtime < USE_FIXUP_BEFORE;
@@ -638,7 +641,7 @@ struct class_ro_t
     const uint8_t * const ivarLayout;
     const char *const name;
     const struct method_list_t * const baseMethods;
-    const struct objc_protocol_list *const baseProtocols;
+    const struct protocol_list_t *const baseProtocols;
     const struct ivar_list_t *const ivars;
     const uint8_t * const weakIvarLayout;
     const struct _prop_list_t * const properties;
@@ -692,11 +695,9 @@ build_v2_class_templates (void)
   /* const struct method_list_t * const baseMethods; */
   add_field_decl (objc_method_list_ptr, "baseMethods", &chain);
 
-  /* const struct objc_protocol_list *const baseProtocols; */
-  add_field_decl (build_pointer_type
-			(xref_tag (RECORD_TYPE,
-				   get_identifier (UTAG_V2_PROTOCOL_LIST))),
-				  "baseProtocols", &chain);
+  /* const struct protocol_list_t *const baseProtocols; */
+  add_field_decl (build_pointer_type (objc_v2_protocol_list_template),
+		  "baseProtocols", &chain);
 
   /* const struct ivar_list_t *const ivars; */
   add_field_decl (objc_v2_ivar_list_ptr, "ivars", &chain);
@@ -770,25 +771,33 @@ build_v2_super_template (void)
      const char ** extended_method_types;
      const char * demangled_name;
      const struct _prop_list_t * class_properties;
-   }
+  };
+
+  struct protocol_list_t
+  {
+    long count;
+    struct protocol_t protocols[];
+  };
 */
 static void
-build_v2_protocol_template (void)
+build_v2_protocol_templates (void)
 {
-  tree decls, *chain = NULL;
+  tree decls, protolist_pointer_type, protocol_pointer_type, *chain;
 
   objc_v2_protocol_template =
 	objc_start_struct (get_identifier (UTAG_V2_PROTOCOL));
 
   /* Class isa; */
+  chain = NULL;
   decls = add_field_decl (objc_object_type, "isa", &chain);
 
   /* char *protocol_name; */
   add_field_decl (string_type_node, "protocol_name", &chain);
 
   /* const struct protocol_list_t * const protocol_list; */
-  add_field_decl (build_pointer_type (objc_v2_protocol_template),
-		  "protocol_list", &chain);
+  protolist_pointer_type = build_pointer_type (xref_tag (RECORD_TYPE,
+				get_identifier (UTAG_V2_PROTOCOL_LIST)));
+  add_field_decl (protolist_pointer_type, "protocol_list", &chain);
 
   /* const struct method_list_t * const instance_methods; */
   add_field_decl (objc_method_proto_list_ptr,  "instance_methods", &chain);
@@ -822,6 +831,24 @@ build_v2_protocol_template (void)
   add_field_decl (objc_prop_list_ptr, "class_properties", &chain);
 
   objc_finish_struct (objc_v2_protocol_template, decls);
+
+  /* --- */
+
+  objc_v2_protocol_list_template =
+		objc_start_struct (get_identifier (UTAG_V2_PROTOCOL_LIST));
+  gcc_assert (TREE_TYPE (protolist_pointer_type)
+		== objc_v2_protocol_list_template);
+
+  /* long count; */
+  chain = NULL;
+  decls = add_field_decl (long_integer_type_node, "count", &chain);
+
+  /* struct protocol_t *protocols[]; */
+  protocol_pointer_type = build_pointer_type (objc_v2_protocol_template);
+  add_field_decl (build_array_type (protocol_pointer_type, 0), "protocols",
+		  &chain);
+
+  objc_finish_struct (objc_v2_protocol_list_template, decls);
 }
 
 /* Build type for a category:
@@ -857,7 +884,7 @@ build_v2_category_template (void)
   add_field_decl (objc_method_list_ptr, "class_methods", &chain);
 
   /* struct protocol_list_t *protocol_list; */
-  add_field_decl (build_pointer_type (objc_v2_protocol_template),
+  add_field_decl (build_pointer_type (objc_v2_protocol_list_template),
                   "protocol_list", &chain );
 
   /* struct _prop_list_t * properties; */
@@ -2336,9 +2363,9 @@ build_v2_protocol_list_address_table (void)
 static tree
 generate_v2_protocol_list (tree i_or_p, tree klass_ctxt)
 {
-  tree refs_decl, lproto, e, plist, ptempl_p_t;
+  tree refs_decl, lproto, plist, protocol_pointer_type, array_ctor, ctor;
   int size = 0;
-  vec<constructor_elt, va_gc> *initlist = NULL;
+  vec<constructor_elt, va_gc> *initlist = NULL, *subinitlist = NULL;
   char buf[BUFSIZE];
 
   if (TREE_CODE (i_or_p) == CLASS_INTERFACE_TYPE
@@ -2349,18 +2376,7 @@ generate_v2_protocol_list (tree i_or_p, tree klass_ctxt)
   else
     gcc_unreachable ();
 
-  /* Compute size.  */
-  for (lproto = plist; lproto; lproto = TREE_CHAIN (lproto))
-    if (TREE_CODE (TREE_VALUE (lproto)) == PROTOCOL_INTERFACE_TYPE
-	&& PROTOCOL_FORWARD_DECL (TREE_VALUE (lproto)))
-      size++;
-
-  /* Build initializer.  */
-
-  ptempl_p_t = build_pointer_type (objc_v2_protocol_template);
-  e = build_int_cst (ptempl_p_t, size);
-  CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE, e);
-
+  /* Compute size, and build array initializer.  */
   for (lproto = plist; lproto; lproto = TREE_CHAIN (lproto))
     {
       tree pval = TREE_VALUE (lproto);
@@ -2369,14 +2385,24 @@ generate_v2_protocol_list (tree i_or_p, tree klass_ctxt)
 	  && PROTOCOL_FORWARD_DECL (pval))
 	{
 	  tree fwref = PROTOCOL_FORWARD_DECL (pval);
-	  location_t loc = DECL_SOURCE_LOCATION (fwref) ;
-	  e = build_unary_op (loc, ADDR_EXPR, fwref, 0);
-	  CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE, e);
+	  location_t loc = DECL_SOURCE_LOCATION (fwref);
+	  tree e = build_unary_op (loc, ADDR_EXPR, fwref, 0);
+	  CONSTRUCTOR_APPEND_ELT (subinitlist,
+				  build_int_cst (NULL_TREE, size), e);
+
+	  size++;
 	}
     }
 
-  /* static struct protocol_list_t *list[size]; */
+  /* Build struct initializer.  */
+  CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE,
+			  build_int_cst (long_integer_type_node, size));
+  protocol_pointer_type = build_pointer_type (objc_v2_protocol_template);
+  array_ctor = objc_build_constructor (
+		build_array_type (protocol_pointer_type, 0), subinitlist);
+  CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE, array_ctor);
 
+  /* Build declaration name.  */
   switch (TREE_CODE (i_or_p))
     {
     case PROTOCOL_INTERFACE_TYPE:
@@ -2396,13 +2422,13 @@ generate_v2_protocol_list (tree i_or_p, tree klass_ctxt)
 	gcc_unreachable ();
     }
 
-  refs_decl = start_var_decl (build_sized_array_type (ptempl_p_t, size+1),
-			      buf);
+  /* Build declaration.  */
+  refs_decl = start_var_decl (objc_v2_protocol_list_template, buf);
   /* ObjC2 puts all these in the base section.  */
   OBJCMETA (refs_decl, objc_meta, meta_base);
   DECL_PRESERVE_P (refs_decl) = 1;
-  finish_var_decl (refs_decl,
-		   objc_build_constructor (TREE_TYPE (refs_decl),initlist));
+  ctor = objc_build_constructor (objc_v2_protocol_list_template, initlist);
+  finish_var_decl (refs_decl, ctor);
   return refs_decl;
 }
 
@@ -2807,8 +2833,9 @@ generate_v2_protocols (void)
       protocol_name_expr = add_objc_string (PROTOCOL_NAME (p), class_names);
 
       if (refs_decl)
-	refs_expr = convert (build_pointer_type (objc_v2_protocol_template),
-			     build_unary_op (loc, ADDR_EXPR, refs_decl, 0));
+	refs_expr = convert (
+		build_pointer_type (objc_v2_protocol_list_template),
+		build_unary_op (loc, ADDR_EXPR, refs_decl, 0));
       else
 	refs_expr = build_int_cst (NULL_TREE, 0);
 
@@ -2898,8 +2925,7 @@ build_v2_category_initializer (tree type, tree cat_name, tree class_name,
     expr = convert (ltyp, null_pointer_node);
   CONSTRUCTOR_APPEND_ELT (v, NULL_TREE, expr);
 
-  /* protocol_list = */
-  ltyp = build_pointer_type (objc_v2_protocol_template);
+  ltyp = build_pointer_type (objc_v2_protocol_list_template);
   if (protocol_list)
     expr = convert (ltyp, build_unary_op (loc, ADDR_EXPR, protocol_list, 0));
   else
@@ -3257,8 +3283,7 @@ build_v2_class_ro_t_initializer (tree type, tree name,
   CONSTRUCTOR_APPEND_ELT (initlist, NULL_TREE, expr);
 
   /* baseProtocols */
-  ltyp = build_pointer_type (xref_tag (RECORD_TYPE,
-			               get_identifier (UTAG_V2_PROTOCOL_LIST)));
+  ltyp = build_pointer_type (objc_v2_protocol_list_template);
   if (baseProtocols)
     expr = convert (ltyp, build_unary_op (loc, ADDR_EXPR, baseProtocols, 0));
   else
